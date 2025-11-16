@@ -854,6 +854,9 @@ def copy_slide(presentation_id: str, slide_id: int, insert_after: int = None) ->
     """
     Copy a slide within a presentation, preserving all formatting and design.
 
+    Uses the Slide.Duplicate() method to ensure master slides, backgrounds, and all
+    formatting properties are properly preserved.
+
     Args:
         presentation_id: ID of the presentation
         slide_id: ID of the slide to copy (integer)
@@ -878,30 +881,43 @@ def copy_slide(presentation_id: str, slide_id: int, insert_after: int = None) ->
         # Get the source slide
         source_slide = pres.Slides.Item(slide_id)
 
-        # Copy the slide
-        source_slide.Copy()
+        # Use Duplicate() method which preserves all formatting, master slides, and backgrounds
+        # Duplicate() inserts the new slide immediately after the source slide
+        duplicated_slide = source_slide.Duplicate()
 
-        # Determine insert position
-        if insert_after is None:
-            insert_after = slide_count  # Insert at end
+        # The duplicate is now at position slide_id + 1
+        new_slide_index = slide_id + 1
 
-        if insert_after < 0 or insert_after > slide_count:
-            return {"error": f"Invalid insert position: {insert_after}. Valid range is 0-{slide_count}"}
+        # If a different insert_after position was requested, move the slide
+        if insert_after is not None:
+            if insert_after < 0 or insert_after > slide_count:
+                return {"error": f"Invalid insert position: {insert_after}. Valid range is 0-{slide_count}"}
 
-        # Paste the slide at the specified position
-        pres.Slides.Paste(insert_after + 1)  # PowerPoint uses 1-based indexing
+            # If insert_after is different from where we just created it, move it
+            if insert_after != slide_id:
+                # Calculate the target position accounting for the duplicate that was just created
+                target_position = insert_after + 1 if insert_after >= slide_id else insert_after + 1
 
-        # Get the newly pasted slide
-        new_slide_index = insert_after + 1
-        new_slide = pres.Slides.Item(new_slide_index)
+                # Move the slide from its current position to the target position
+                duplicated_slide.MoveTo(target_position)
+                new_slide_index = target_position
+        else:
+            # No specific position requested, move to end if it's not already there
+            final_slide_count = pres.Slides.Count
+            if new_slide_index != final_slide_count:
+                duplicated_slide.MoveTo(final_slide_count)
+                new_slide_index = final_slide_count
+
+        # Get the final slide object
+        final_slide = pres.Slides.Item(new_slide_index)
 
         return {
             "success": True,
             "id": str(new_slide_index),
             "index": new_slide_index,
-            "title": get_slide_title(new_slide),
-            "shape_count": new_slide.Shapes.Count,
-            "message": f"Slide {slide_id} copied successfully to position {new_slide_index}"
+            "title": get_slide_title(final_slide),
+            "shape_count": final_slide.Shapes.Count,
+            "message": f"Slide {slide_id} duplicated successfully to position {new_slide_index} with all formatting preserved"
         }
     except Exception as e:
         return {"error": f"Error copying slide: {str(e)}"}
