@@ -849,6 +849,279 @@ def get_shape_type_name(type_id):
     return shape_types.get(type_id, f"Unknown Type ({type_id})")
 
 
+@mcp.tool()
+def copy_slide(presentation_id: str, slide_id: int, insert_after: int = None) -> Dict[str, Any]:
+    """
+    Copy a slide within a presentation, preserving all formatting and design.
+
+    Args:
+        presentation_id: ID of the presentation
+        slide_id: ID of the slide to copy (integer)
+        insert_after: Position after which to insert the new slide (if None, inserts at end)
+
+    Returns:
+        Information about the new copied slide
+    """
+    if presentation_id not in ppt_automation.presentations:
+        return {"error": "Presentation ID not found"}
+
+    pres = ppt_automation.presentations[presentation_id]
+
+    try:
+        # Get slide count
+        slide_count = pres.Slides.Count
+
+        # Validate slide_id
+        if slide_id < 1 or slide_id > slide_count:
+            return {"error": f"Invalid slide ID: {slide_id}. Valid range is 1-{slide_count}"}
+
+        # Get the source slide
+        source_slide = pres.Slides.Item(slide_id)
+
+        # Copy the slide
+        source_slide.Copy()
+
+        # Determine insert position
+        if insert_after is None:
+            insert_after = slide_count  # Insert at end
+
+        if insert_after < 0 or insert_after > slide_count:
+            return {"error": f"Invalid insert position: {insert_after}. Valid range is 0-{slide_count}"}
+
+        # Paste the slide at the specified position
+        pres.Slides.Paste(insert_after + 1)  # PowerPoint uses 1-based indexing
+
+        # Get the newly pasted slide
+        new_slide_index = insert_after + 1
+        new_slide = pres.Slides.Item(new_slide_index)
+
+        return {
+            "success": True,
+            "id": str(new_slide_index),
+            "index": new_slide_index,
+            "title": get_slide_title(new_slide),
+            "shape_count": new_slide.Shapes.Count,
+            "message": f"Slide {slide_id} copied successfully to position {new_slide_index}"
+        }
+    except Exception as e:
+        return {"error": f"Error copying slide: {str(e)}"}
+
+@mcp.tool()
+def delete_slide(presentation_id: str, slide_id: int) -> Dict[str, Any]:
+    """
+    Delete a slide from a presentation.
+
+    Args:
+        presentation_id: ID of the presentation
+        slide_id: ID of the slide to delete (integer)
+
+    Returns:
+        Status of the operation
+    """
+    if presentation_id not in ppt_automation.presentations:
+        return {"error": "Presentation ID not found"}
+
+    pres = ppt_automation.presentations[presentation_id]
+
+    try:
+        # Get slide count
+        slide_count = pres.Slides.Count
+
+        # Validate slide_id
+        if slide_id < 1 or slide_id > slide_count:
+            return {"error": f"Invalid slide ID: {slide_id}. Valid range is 1-{slide_count}"}
+
+        # Get and delete the slide
+        slide_to_delete = pres.Slides.Item(slide_id)
+        slide_to_delete.Delete()
+
+        return {
+            "success": True,
+            "message": f"Slide {slide_id} deleted successfully",
+            "new_slide_count": pres.Slides.Count
+        }
+    except Exception as e:
+        return {"error": f"Error deleting slide: {str(e)}"}
+
+@mcp.tool()
+def move_slide(presentation_id: str, slide_id: int, new_position: int) -> Dict[str, Any]:
+    """
+    Move a slide to a new position in the presentation.
+
+    Args:
+        presentation_id: ID of the presentation
+        slide_id: ID of the slide to move (integer)
+        new_position: New position for the slide (1-based index)
+
+    Returns:
+        Status of the operation
+    """
+    if presentation_id not in ppt_automation.presentations:
+        return {"error": "Presentation ID not found"}
+
+    pres = ppt_automation.presentations[presentation_id]
+
+    try:
+        # Get slide count
+        slide_count = pres.Slides.Count
+
+        # Validate slide_id
+        if slide_id < 1 or slide_id > slide_count:
+            return {"error": f"Invalid slide ID: {slide_id}. Valid range is 1-{slide_count}"}
+
+        # Validate new_position
+        if new_position < 1 or new_position > slide_count:
+            return {"error": f"Invalid new position: {new_position}. Valid range is 1-{slide_count}"}
+
+        # Copy the slide to new position
+        source_slide = pres.Slides.Item(slide_id)
+        source_slide.Copy()
+
+        # Paste at new position
+        if new_position > slide_id:
+            # If moving down, paste after the target position
+            pres.Slides.Paste(new_position + 1)
+        else:
+            # If moving up, paste at the new position
+            pres.Slides.Paste(new_position)
+
+        # Delete the original slide
+        if new_position > slide_id:
+            pres.Slides.Item(slide_id).Delete()
+        else:
+            # Original slide is now one position further
+            pres.Slides.Item(slide_id + 1).Delete()
+
+        return {
+            "success": True,
+            "message": f"Slide {slide_id} moved to position {new_position}",
+            "new_slide_count": pres.Slides.Count
+        }
+    except Exception as e:
+        return {"error": f"Error moving slide: {str(e)}"}
+
+@mcp.tool()
+def get_presentation_info(presentation_id: str) -> Dict[str, Any]:
+    """
+    Get metadata information about a presentation.
+
+    Args:
+        presentation_id: ID of the presentation
+
+    Returns:
+        Dictionary containing presentation metadata
+    """
+    if presentation_id not in ppt_automation.presentations:
+        return {"error": "Presentation ID not found"}
+
+    pres = ppt_automation.presentations[presentation_id]
+
+    try:
+        return {
+            "id": presentation_id,
+            "name": os.path.basename(pres.FullName) if pres.FullName else "Untitled",
+            "path": pres.FullName,
+            "slide_count": pres.Slides.Count,
+            "is_saved": not pres.Saved
+        }
+    except Exception as e:
+        return {"error": f"Error getting presentation info: {str(e)}"}
+
+@mcp.tool()
+def list_all_shapes_in_slide(presentation_id: str, slide_id: int) -> Dict[str, Any]:
+    """
+    List all shapes in a slide with detailed information to help identify which to update.
+
+    Args:
+        presentation_id: ID of the presentation
+        slide_id: ID of the slide (integer)
+
+    Returns:
+        Dictionary containing shape information
+    """
+    if presentation_id not in ppt_automation.presentations:
+        return {"error": "Presentation ID not found"}
+
+    pres = ppt_automation.presentations[presentation_id]
+
+    try:
+        # Get slide count
+        slide_count = pres.Slides.Count
+
+        # Validate slide_id
+        if slide_id < 1 or slide_id > slide_count:
+            return {"error": f"Invalid slide ID: {slide_id}. Valid range is 1-{slide_count}"}
+
+        slide = pres.Slides.Item(slide_id)
+        shapes = []
+
+        # Iterate through all shapes
+        for i in range(1, slide.Shapes.Count + 1):
+            shape = slide.Shapes.Item(i)
+
+            shape_info = {
+                "id": str(i),
+                "name": shape.Name if hasattr(shape, "Name") else "Unnamed",
+                "type": shape.Type,
+                "type_name": get_shape_type_name(shape.Type),
+                "has_text": is_text_box(shape)
+            }
+
+            # Extract text if available
+            if is_text_box(shape):
+                text = extract_shape_text(shape)
+                shape_info["text"] = text
+
+            shapes.append(shape_info)
+
+        return {
+            "slide_id": slide_id,
+            "slide_index": slide_id,
+            "shape_count": slide.Shapes.Count,
+            "shapes": shapes
+        }
+    except Exception as e:
+        return {"error": f"Error listing shapes: {str(e)}"}
+
+@mcp.tool()
+def save_copy(presentation_id: str, path: str) -> Dict[str, Any]:
+    """
+    Create a copy of a presentation at the specified path.
+
+    Uses the SaveCopyAs2 method which preserves the file format and doesn't change
+    the original presentation's location.
+
+    Args:
+        presentation_id: ID of the presentation
+        path: Full path where the copy should be saved (e.g., C:\\Documents\\copy.pptx)
+
+    Returns:
+        Status of the operation and information about the saved copy
+    """
+    if presentation_id not in ppt_automation.presentations:
+        return {"error": "Presentation ID not found"}
+
+    pres = ppt_automation.presentations[presentation_id]
+
+    try:
+        # Get the directory path and create it if it doesn't exist
+        save_dir = os.path.dirname(path)
+        if save_dir and not os.path.exists(save_dir):
+            os.makedirs(save_dir, exist_ok=True)
+
+        # Use SaveCopyAs2 to create a copy without changing the active presentation
+        # SaveCopyAs2 parameters: Filename, Format (can be None for current format)
+        pres.SaveCopyAs2(path)
+
+        return {
+            "success": True,
+            "path": path,
+            "original_path": pres.FullName,
+            "message": f"Presentation copied successfully to {path}"
+        }
+    except Exception as e:
+        return {"error": f"Error saving copy: {str(e)}"}
+
 def main():
     mcp.run(transport="stdio")
 
