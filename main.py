@@ -1160,7 +1160,7 @@ def get_presentation_sections(presentation_id: str) -> Dict[str, Any]:
 
         # Check if presentation has sections
         try:
-            sections_count = pres.SectionProperties.Count
+            sections_count = pres.Sections.Count
         except:
             # If Sections property doesn't exist, return empty sections
             return {
@@ -1173,7 +1173,7 @@ def get_presentation_sections(presentation_id: str) -> Dict[str, Any]:
         # Iterate through all sections
         for i in range(1, sections_count + 1):
             try:
-                section = pres.SectionProperties.Item(i)
+                section = pres.Sections.Item(i)
 
                 # Get section properties
                 section_name = section.Name if hasattr(section, "Name") else f"Section {i}"
