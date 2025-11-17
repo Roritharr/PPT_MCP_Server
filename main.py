@@ -1732,7 +1732,7 @@ def copy_shape(presentation_id: str, source_slide_id: int, source_shape_id: int,
         return {"error": f"Error copying shape: {str(e)}"}
 
 @mcp.tool()
-def export_slide_as_image(presentation_id: str, slide_id: int, image_format: str = "PNG", width: int = 960, height: int = 720) -> Dict[str, Any]:
+def export_slide_as_image(presentation_id: str, slide_id: int, image_format: str = "PNG", width: int = None, height: int = None) -> Dict[str, Any]:
     """
     Export a slide as an image file to verify formatting and content.
 
@@ -1749,12 +1749,16 @@ def export_slide_as_image(presentation_id: str, slide_id: int, image_format: str
     Each export gets a unique timestamp (YYYYMMDD_HHMMSS) so you can compare multiple
     versions if needed.
 
+    IMPORTANT: Automatically maintains the slide's aspect ratio (16:9, 4:3, or custom).
+    If you specify only width, height is calculated to maintain ratio. If you specify
+    neither, defaults to 1920px wide (HD resolution) with correct aspect ratio.
+
     Args:
         presentation_id: ID of the presentation
         slide_id: ID of the slide to export (integer)
         image_format: Image format - "PNG" or "JPG" (default: PNG)
-        width: Width of exported image in pixels (default: 960)
-        height: Height of exported image in pixels (default: 720)
+        width: Width of exported image in pixels (optional, default: 1920 for HD)
+        height: Height of exported image in pixels (optional, auto-calculated from width)
 
     Returns:
         Dictionary with path to exported image file in temp directory
@@ -1782,6 +1786,29 @@ def export_slide_as_image(presentation_id: str, slide_id: int, image_format: str
         if image_format.upper() not in ["PNG", "JPG", "JPEG"]:
             return {"error": f"Invalid image format: {image_format}. Supported formats: PNG, JPG"}
 
+        # Get the presentation's slide dimensions to maintain aspect ratio
+        slide_width_points = pres.PageSetup.SlideWidth
+        slide_height_points = pres.PageSetup.SlideHeight
+        aspect_ratio = slide_width_points / slide_height_points
+
+        # Calculate export dimensions maintaining aspect ratio
+        if width is None and height is None:
+            # Default to HD resolution (1920px wide)
+            export_width = 1920
+            export_height = int(export_width / aspect_ratio)
+        elif width is not None and height is None:
+            # Width specified, calculate height
+            export_width = width
+            export_height = int(export_width / aspect_ratio)
+        elif width is None and height is not None:
+            # Height specified, calculate width
+            export_height = height
+            export_width = int(export_height * aspect_ratio)
+        else:
+            # Both specified - use as-is (may distort if ratio doesn't match)
+            export_width = width
+            export_height = height
+
         # Get the slide
         slide = pres.Slides.Item(slide_id)
 
@@ -1800,15 +1827,20 @@ def export_slide_as_image(presentation_id: str, slide_id: int, image_format: str
         if filter_name == "JPEG":
             filter_name = "JPG"
 
-        slide.Export(export_path, filter_name, width, height)
+        slide.Export(export_path, filter_name, export_width, export_height)
 
         return {
             "success": True,
             "path": export_path,
             "slide_id": slide_id,
             "image_format": image_format.upper(),
-            "dimensions": {"width": width, "height": height},
-            "message": f"Slide {slide_id} exported successfully to {export_path}"
+            "dimensions": {
+                "width": export_width,
+                "height": export_height,
+                "aspect_ratio": round(aspect_ratio, 2),
+                "slide_size": f"{slide_width_points:.0f}x{slide_height_points:.0f} points"
+            },
+            "message": f"Slide {slide_id} exported successfully to {export_path} at {export_width}x{export_height}px"
         }
     except Exception as e:
         return {"error": f"Error exporting slide: {str(e)}"}
