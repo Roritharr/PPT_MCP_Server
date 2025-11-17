@@ -1158,45 +1158,45 @@ def get_presentation_sections(presentation_id: str) -> Dict[str, Any]:
         sections = []
         total_slides = pres.Slides.Count
 
-        # Check if presentation has sections
+        # Access sections using the correct API: pres.SectionProperties
         try:
-            sections_count = pres.Sections.Count
+            sect_props = pres.SectionProperties
+            sections_count = sect_props.Count
         except:
-            # If Sections property doesn't exist, return empty sections
+            # If SectionProperties doesn't exist or is empty, return empty sections
             return {
                 "presentation_id": presentation_id,
                 "total_slides": total_slides,
                 "has_sections": False,
+                "section_count": 0,
                 "sections": []
             }
 
-        # Iterate through all sections
+        # Iterate through all sections (1-based indexing)
         for i in range(1, sections_count + 1):
             try:
-                section = pres.Sections.Item(i)
+                # Use SectionProperties methods to get section details
+                # Note: All methods use 1-based indexing
+                section_name = sect_props.Name(i)
+                section_first_slide = sect_props.FirstSlide(i)
+                section_slide_count = sect_props.SlidesCount(i)
+                section_id = sect_props.SectionID(i)
 
-                # Get section properties
-                section_name = section.Name if hasattr(section, "Name") else f"Section {i}"
-                section_first_slide = section.FirstSlideIndex if hasattr(section, "FirstSlideIndex") else None
-                section_slide_count = section.SlideCount if hasattr(section, "SlideCount") else None
-
-                # Calculate slide range
-                if section_first_slide and section_slide_count:
-                    slide_range = {
-                        "start": section_first_slide,
-                        "end": section_first_slide + section_slide_count - 1,
-                        "count": section_slide_count
-                    }
-                else:
-                    slide_range = None
+                # Calculate slide range (inclusive on both ends)
+                slide_range = {
+                    "start": section_first_slide,
+                    "end": section_first_slide + section_slide_count - 1,
+                    "count": section_slide_count
+                }
 
                 sections.append({
                     "index": i,
                     "name": section_name,
+                    "id": section_id,
                     "slide_range": slide_range
                 })
             except Exception as e:
-                # Skip sections that can't be accessed
+                # Log the error but continue with other sections
                 continue
 
         return {
@@ -1209,6 +1209,362 @@ def get_presentation_sections(presentation_id: str) -> Dict[str, Any]:
         }
     except Exception as e:
         return {"error": f"Error getting presentation sections: {str(e)}"}
+
+@mcp.tool()
+def set_text_font_size(presentation_id: str, slide_id: str, shape_id: str, font_size: float) -> Dict[str, Any]:
+    """
+    Set the font size of text in a shape.
+
+    Args:
+        presentation_id: ID of the presentation
+        slide_id: ID of the slide (numeric string)
+        shape_id: ID of the shape (numeric string)
+        font_size: Font size in points (e.g., 12, 14, 18, 24, etc.)
+
+    Returns:
+        Status of the operation
+    """
+    if presentation_id not in ppt_automation.presentations:
+        return {"error": "Presentation ID not found"}
+
+    pres = ppt_automation.presentations[presentation_id]
+
+    try:
+        # Parse IDs
+        if isinstance(slide_id, str):
+            clean_slide_id = slide_id.strip('"\'`')
+        else:
+            clean_slide_id = str(slide_id)
+
+        if isinstance(shape_id, str):
+            clean_shape_id = shape_id.strip('"\'`')
+        else:
+            clean_shape_id = str(shape_id)
+
+        slide_idx = int(clean_slide_id)
+        shape_idx = int(clean_shape_id)
+    except ValueError as e:
+        return {"error": f"Invalid ID format: {str(e)}"}
+
+    if slide_idx < 1 or slide_idx > pres.Slides.Count:
+        return {"error": f"Invalid slide ID: {slide_id}"}
+
+    try:
+        slide = pres.Slides.Item(slide_idx)
+    except Exception as e:
+        return {"error": f"Error accessing slide: {str(e)}"}
+
+    if shape_idx < 1 or shape_idx > slide.Shapes.Count:
+        return {"error": f"Invalid shape ID: {shape_id}"}
+
+    try:
+        shape = slide.Shapes.Item(shape_idx)
+
+        # Try TextFrame2 first (newer PowerPoint versions)
+        if hasattr(shape, "TextFrame2"):
+            try:
+                shape.TextFrame2.TextRange.Font.Size = font_size
+                return {"success": True, "message": f"Font size set to {font_size} points"}
+            except:
+                pass
+
+        # Then try TextFrame
+        if hasattr(shape, "TextFrame") and hasattr(shape.TextFrame, "TextRange"):
+            shape.TextFrame.TextRange.Font.Size = font_size
+            return {"success": True, "message": f"Font size set to {font_size} points"}
+
+        # Try grouped shapes
+        if shape.Type == 6:  # msoGroup
+            for i in range(1, shape.GroupItems.Count + 1):
+                subshape = shape.GroupItems.Item(i)
+                if hasattr(subshape, "TextFrame") and hasattr(subshape.TextFrame, "TextRange"):
+                    subshape.TextFrame.TextRange.Font.Size = font_size
+                    return {"success": True, "message": f"Font size set to {font_size} points in grouped shape"}
+
+        return {"success": False, "message": "Shape does not contain editable text"}
+    except Exception as e:
+        return {"success": False, "error": f"Error setting font size: {str(e)}"}
+
+@mcp.tool()
+def set_text_font_name(presentation_id: str, slide_id: str, shape_id: str, font_name: str) -> Dict[str, Any]:
+    """
+    Set the font name/family of text in a shape.
+
+    Args:
+        presentation_id: ID of the presentation
+        slide_id: ID of the slide (numeric string)
+        shape_id: ID of the shape (numeric string)
+        font_name: Font name (e.g., "Knockout", "Atomic Marker", "Akkurat Light")
+
+    Returns:
+        Status of the operation
+    """
+    if presentation_id not in ppt_automation.presentations:
+        return {"error": "Presentation ID not found"}
+
+    pres = ppt_automation.presentations[presentation_id]
+
+    try:
+        # Parse IDs
+        if isinstance(slide_id, str):
+            clean_slide_id = slide_id.strip('"\'`')
+        else:
+            clean_slide_id = str(slide_id)
+
+        if isinstance(shape_id, str):
+            clean_shape_id = shape_id.strip('"\'`')
+        else:
+            clean_shape_id = str(shape_id)
+
+        slide_idx = int(clean_slide_id)
+        shape_idx = int(clean_shape_id)
+    except ValueError as e:
+        return {"error": f"Invalid ID format: {str(e)}"}
+
+    if slide_idx < 1 or slide_idx > pres.Slides.Count:
+        return {"error": f"Invalid slide ID: {slide_id}"}
+
+    try:
+        slide = pres.Slides.Item(slide_idx)
+    except Exception as e:
+        return {"error": f"Error accessing slide: {str(e)}"}
+
+    if shape_idx < 1 or shape_idx > slide.Shapes.Count:
+        return {"error": f"Invalid shape ID: {shape_id}"}
+
+    try:
+        shape = slide.Shapes.Item(shape_idx)
+
+        # Try TextFrame2 first
+        if hasattr(shape, "TextFrame2"):
+            try:
+                shape.TextFrame2.TextRange.Font.Name = font_name
+                return {"success": True, "message": f"Font name set to {font_name}"}
+            except:
+                pass
+
+        # Then try TextFrame
+        if hasattr(shape, "TextFrame") and hasattr(shape.TextFrame, "TextRange"):
+            shape.TextFrame.TextRange.Font.Name = font_name
+            return {"success": True, "message": f"Font name set to {font_name}"}
+
+        # Try grouped shapes
+        if shape.Type == 6:  # msoGroup
+            for i in range(1, shape.GroupItems.Count + 1):
+                subshape = shape.GroupItems.Item(i)
+                if hasattr(subshape, "TextFrame") and hasattr(subshape.TextFrame, "TextRange"):
+                    subshape.TextFrame.TextRange.Font.Name = font_name
+                    return {"success": True, "message": f"Font name set to {font_name} in grouped shape"}
+
+        return {"success": False, "message": "Shape does not contain editable text"}
+    except Exception as e:
+        return {"success": False, "error": f"Error setting font name: {str(e)}"}
+
+@mcp.tool()
+def get_shape_properties(presentation_id: str, slide_id: int, shape_id: int) -> Dict[str, Any]:
+    """
+    Get detailed properties of a shape including position, size, and formatting.
+
+    Args:
+        presentation_id: ID of the presentation
+        slide_id: ID of the slide (integer)
+        shape_id: ID of the shape (integer)
+
+    Returns:
+        Dictionary containing shape properties
+    """
+    if presentation_id not in ppt_automation.presentations:
+        return {"error": "Presentation ID not found"}
+
+    pres = ppt_automation.presentations[presentation_id]
+
+    try:
+        slide_count = pres.Slides.Count
+        if slide_id < 1 or slide_id > slide_count:
+            return {"error": f"Invalid slide ID: {slide_id}"}
+
+        slide = pres.Slides.Item(slide_id)
+
+        if shape_id < 1 or shape_id > slide.Shapes.Count:
+            return {"error": f"Invalid shape ID: {shape_id}"}
+
+        shape = slide.Shapes.Item(shape_id)
+
+        properties = {
+            "id": str(shape_id),
+            "name": shape.Name if hasattr(shape, "Name") else "Unnamed",
+            "type": shape.Type,
+            "type_name": get_shape_type_name(shape.Type),
+            "position": {
+                "left": shape.Left,
+                "top": shape.Top,
+                "width": shape.Width,
+                "height": shape.Height
+            }
+        }
+
+        # Add text properties if available
+        if is_text_box(shape):
+            properties["has_text"] = True
+            properties["text"] = extract_shape_text(shape)
+
+            # Try to get font properties
+            try:
+                if hasattr(shape, "TextFrame2"):
+                    font = shape.TextFrame2.TextRange.Font
+                    properties["font"] = {
+                        "name": font.Name if hasattr(font, "Name") else None,
+                        "size": font.Size if hasattr(font, "Size") else None,
+                        "bold": font.Bold if hasattr(font, "Bold") else None
+                    }
+                elif hasattr(shape, "TextFrame") and hasattr(shape.TextFrame, "TextRange"):
+                    font = shape.TextFrame.TextRange.Font
+                    properties["font"] = {
+                        "name": font.Name if hasattr(font, "Name") else None,
+                        "size": font.Size if hasattr(font, "Size") else None,
+                        "bold": font.Bold if hasattr(font, "Bold") else None
+                    }
+            except:
+                pass
+        else:
+            properties["has_text"] = False
+
+        return {
+            "success": True,
+            "properties": properties
+        }
+    except Exception as e:
+        return {"error": f"Error getting shape properties: {str(e)}"}
+
+@mcp.tool()
+def set_shape_position(presentation_id: str, slide_id: int, shape_id: int,
+                       left: float = None, top: float = None,
+                       width: float = None, height: float = None) -> Dict[str, Any]:
+    """
+    Set the position and/or size of a shape.
+
+    Args:
+        presentation_id: ID of the presentation
+        slide_id: ID of the slide (integer)
+        shape_id: ID of the shape (integer)
+        left: Left position in points (optional)
+        top: Top position in points (optional)
+        width: Width in points (optional)
+        height: Height in points (optional)
+
+    Returns:
+        Status of the operation
+    """
+    if presentation_id not in ppt_automation.presentations:
+        return {"error": "Presentation ID not found"}
+
+    pres = ppt_automation.presentations[presentation_id]
+
+    try:
+        slide_count = pres.Slides.Count
+        if slide_id < 1 or slide_id > slide_count:
+            return {"error": f"Invalid slide ID: {slide_id}"}
+
+        slide = pres.Slides.Item(slide_id)
+
+        if shape_id < 1 or shape_id > slide.Shapes.Count:
+            return {"error": f"Invalid shape ID: {shape_id}"}
+
+        shape = slide.Shapes.Item(shape_id)
+
+        # Update properties that were provided
+        if left is not None:
+            shape.Left = left
+        if top is not None:
+            shape.Top = top
+        if width is not None:
+            shape.Width = width
+        if height is not None:
+            shape.Height = height
+
+        return {
+            "success": True,
+            "message": "Shape position/size updated",
+            "new_position": {
+                "left": shape.Left,
+                "top": shape.Top,
+                "width": shape.Width,
+                "height": shape.Height
+            }
+        }
+    except Exception as e:
+        return {"error": f"Error setting shape position: {str(e)}"}
+
+@mcp.tool()
+def copy_shape(presentation_id: str, source_slide_id: int, source_shape_id: int,
+               target_slide_id: int, left: float = None, top: float = None) -> Dict[str, Any]:
+    """
+    Copy a shape from one slide to another, optionally setting its position.
+
+    Args:
+        presentation_id: ID of the presentation
+        source_slide_id: ID of the source slide (integer)
+        source_shape_id: ID of the shape to copy (integer)
+        target_slide_id: ID of the target slide (integer)
+        left: Left position in points (optional, keeps original if not specified)
+        top: Top position in points (optional, keeps original if not specified)
+
+    Returns:
+        Information about the copied shape
+    """
+    if presentation_id not in ppt_automation.presentations:
+        return {"error": "Presentation ID not found"}
+
+    pres = ppt_automation.presentations[presentation_id]
+
+    try:
+        slide_count = pres.Slides.Count
+
+        # Validate source slide
+        if source_slide_id < 1 or source_slide_id > slide_count:
+            return {"error": f"Invalid source slide ID: {source_slide_id}"}
+
+        # Validate target slide
+        if target_slide_id < 1 or target_slide_id > slide_count:
+            return {"error": f"Invalid target slide ID: {target_slide_id}"}
+
+        source_slide = pres.Slides.Item(source_slide_id)
+        target_slide = pres.Slides.Item(target_slide_id)
+
+        # Validate shape
+        if source_shape_id < 1 or source_shape_id > source_slide.Shapes.Count:
+            return {"error": f"Invalid shape ID: {source_shape_id}"}
+
+        source_shape = source_slide.Shapes.Item(source_shape_id)
+
+        # Duplicate the shape by using copy/paste
+        source_shape.Copy()
+        target_slide.Shapes.Paste()
+
+        # The pasted shape is now the last shape on the target slide
+        new_shape_id = target_slide.Shapes.Count
+        new_shape = target_slide.Shapes.Item(new_shape_id)
+
+        # Set position if specified
+        if left is not None:
+            new_shape.Left = left
+        if top is not None:
+            new_shape.Top = top
+
+        return {
+            "success": True,
+            "new_shape_id": str(new_shape_id),
+            "new_shape_name": new_shape.Name if hasattr(new_shape, "Name") else "Unnamed",
+            "position": {
+                "left": new_shape.Left,
+                "top": new_shape.Top,
+                "width": new_shape.Width,
+                "height": new_shape.Height
+            },
+            "message": f"Shape copied from slide {source_slide_id} to slide {target_slide_id}"
+        }
+    except Exception as e:
+        return {"error": f"Error copying shape: {str(e)}"}
 
 @mcp.tool()
 def export_slide_as_image(presentation_id: str, slide_id: int, image_format: str = "PNG", width: int = 960, height: int = 720) -> Dict[str, Any]:
