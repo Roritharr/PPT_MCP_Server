@@ -170,13 +170,32 @@ def get_slide_title(slide):
 def get_slide_text(presentation_id: str, slide_id: int) -> Dict[str, Any]:
     """
     Get all text content in a slide.
-    
+
+    Extracts text from all shapes containing text (text boxes, titles, placeholders,
+    grouped shapes, etc.). Returns a dictionary mapping shape IDs to their text content
+    and shape names.
+
+    Use this to:
+    - Review what text is on a slide before editing
+    - Identify which shapes contain specific content
+    - Get shape IDs for text-containing shapes (needed for update_text)
+    - Compare text content across slides
+
+    Note: This only returns shapes that CONTAIN text. To see ALL shapes (including
+    images, icons, graphics), use list_all_shapes_in_slide() instead.
+
     Args:
         presentation_id: ID of the presentation
         slide_id: ID of the slide (integer)
-        
+
     Returns:
-        Dictionary containing text content organized by shape
+        Dictionary with slide_id, shape_count, and content mapping shape IDs to
+        {shape_name, text} for each text-containing shape
+
+    Example use cases:
+        - Review slide content before copying to identify what needs updating
+        - Find the shape ID containing specific text you want to change
+        - Extract all text from a slide for analysis or translation
     """
     try:
         # Check if presentation exists
@@ -273,15 +292,31 @@ def get_slide_text(presentation_id: str, slide_id: int) -> Dict[str, Any]:
 def update_text(presentation_id: str, slide_id: str, shape_id: str, text: str) -> Dict[str, Any]:
     """
     Update the text content of a shape.
-    
+
+    Changes ONLY the text content - preserves all formatting (font, size, color, etc.).
+    Works with text boxes, placeholders, and grouped shapes containing text.
+    Automatically handles both TextFrame and TextFrame2 APIs for compatibility.
+
+    IMPORTANT: This only changes the text string. To change font properties, use:
+    - set_text_font_size() to change font size
+    - set_text_font_name() to change font family
+
+    Use list_all_shapes_in_slide() first to identify the correct shape_id.
+
     Args:
         presentation_id: ID of the presentation
         slide_id: ID of the slide (numeric string)
         shape_id: ID of the shape (numeric string)
         text: New text content
-        
+
     Returns:
         Status of the operation
+
+    Example workflow:
+        1. copy_slide() to duplicate a template slide
+        2. list_all_shapes_in_slide() to find text box IDs
+        3. update_text() to change text while keeping formatting
+        4. export_slide_as_image() to verify the result
     """
     if presentation_id not in ppt_automation.presentations:
         return {"error": "Presentation ID not found"}
@@ -854,8 +889,19 @@ def copy_slide(presentation_id: str, slide_id: int, insert_after: int = None) ->
     """
     Copy a slide within a presentation, preserving all formatting and design.
 
-    Uses the Slide.Duplicate() method to ensure master slides, backgrounds, and all
-    formatting properties are properly preserved.
+    Uses the Slide.Duplicate() method to ensure master slides, backgrounds, fonts,
+    colors, and ALL formatting properties are properly preserved. This is the CORRECT
+    way to copy slides - using Copy/Paste loses master slide associations and formatting.
+
+    This is the primary workflow for creating new slides with consistent branding:
+    1. copy_slide() to duplicate a template slide with proper formatting
+    2. list_all_shapes_in_slide() to find which text boxes to update
+    3. update_text() to change text content while preserving formatting
+    4. (Optional) copy_shape() to add icons from library slides
+    5. export_slide_as_image() to verify the result
+
+    Note: Use copy_slide() for entire slides, use copy_shape() for individual
+    elements (icons, images, graphics) between slides.
 
     Args:
         presentation_id: ID of the presentation
@@ -863,7 +909,12 @@ def copy_slide(presentation_id: str, slide_id: int, insert_after: int = None) ->
         insert_after: Position after which to insert the new slide (if None, inserts at end)
 
     Returns:
-        Information about the new copied slide
+        Information about the new copied slide including new ID, index, title, and shape count
+
+    Example use cases:
+        - Copy template slides from Pimp My Slide to build new presentations
+        - Duplicate slides with complex layouts to modify content
+        - Create multiple variations of a slide with same design
     """
     if presentation_id not in ppt_automation.presentations:
         return {"error": "Presentation ID not found"}
@@ -1048,12 +1099,31 @@ def list_all_shapes_in_slide(presentation_id: str, slide_id: int) -> Dict[str, A
     """
     List all shapes in a slide with detailed information to help identify which to update.
 
+    Returns information about ALL shapes on the slide including:
+    - Shape ID (needed for update_text, set_text_font_size, copy_shape, etc.)
+    - Shape name (e.g., "Title 1", "Picture 5", "Icon Group 2")
+    - Shape type and type_name (text boxes, images, icons, groups, etc.)
+    - Text content if the shape contains text
+    - Whether the shape has editable text
+
+    This is essential for identifying which shapes to manipulate. Use this before:
+    - Updating text in specific text boxes
+    - Copying icons from library slides (find the icon's shape ID first)
+    - Getting properties of shapes before repositioning
+    - Understanding slide structure and what elements are present
+
     Args:
         presentation_id: ID of the presentation
         slide_id: ID of the slide (integer)
 
     Returns:
-        Dictionary containing shape information
+        Dictionary with slide_id, shape_count, and array of shapes with detailed info
+
+    Example workflow:
+        1. list_all_shapes_in_slide() to find icon with ID 5
+        2. copy_shape() to copy icon ID 5 to target slide
+        3. list_all_shapes_in_slide() on target to get new icon's ID
+        4. set_shape_position() to position the copied icon
     """
     if presentation_id not in ppt_automation.presentations:
         return {"error": "Presentation ID not found"}
@@ -1143,11 +1213,34 @@ def get_presentation_sections(presentation_id: str) -> Dict[str, Any]:
     """
     Get all sections in a presentation with their slide ranges.
 
+    PowerPoint sections organize slides into logical groups (like chapters in a book).
+    This is especially important for large presentations like "Pimp My Slide" which
+    has sections like:
+    - Brand Guidelines (slides 1-8)
+    - Building Blocks (slides 9-32)
+    - Icon Library (slides 33-65)
+    - Data Visualization (slides 82-158)
+    - etc.
+
+    Use this to:
+    - Navigate large presentations by topic
+    - Find which section contains specific slide ranges
+    - Identify where icon libraries or template sections are located
+    - Understand presentation structure before copying slides
+
+    Returns section names, IDs, and slide ranges (start, end, count).
+
     Args:
         presentation_id: ID of the presentation
 
     Returns:
-        Dictionary containing sections and their slide information
+        Dictionary with total_slides, has_sections, section_count, and array of
+        sections with {index, name, id, slide_range: {start, end, count}}
+
+    Example use cases:
+        - Find the Icon Library section to locate icons to copy
+        - Identify which section contains data visualization templates
+        - Navigate to specific topics in large design system presentations
     """
     if presentation_id not in ppt_automation.presentations:
         return {"error": "Presentation ID not found"}
@@ -1643,6 +1736,19 @@ def export_slide_as_image(presentation_id: str, slide_id: int, image_format: str
     """
     Export a slide as an image file to verify formatting and content.
 
+    This is CRITICAL for quality control - it allows you to actually SEE the rendered
+    slide and catch visual mistakes that aren't obvious from the PowerPoint API alone.
+    Use this to verify:
+    - Fonts and formatting are correct
+    - Icons and images are positioned properly
+    - Colors and backgrounds match the brand guidelines
+    - Text fits within boundaries and doesn't overflow
+    - Overall slide appearance before finalizing
+
+    Exports to temporary directory with timestamped filename to prevent version confusion.
+    Each export gets a unique timestamp (YYYYMMDD_HHMMSS) so you can compare multiple
+    versions if needed.
+
     Args:
         presentation_id: ID of the presentation
         slide_id: ID of the slide to export (integer)
@@ -1651,7 +1757,13 @@ def export_slide_as_image(presentation_id: str, slide_id: int, image_format: str
         height: Height of exported image in pixels (default: 720)
 
     Returns:
-        Dictionary with path to the exported image file
+        Dictionary with path to exported image file in temp directory
+
+    Example use cases:
+        - After copying slides: verify formatting was preserved
+        - After updating text: verify fonts and sizes are correct
+        - After copying icons: verify positioning matches design
+        - Before finalizing presentation: visual QA check
     """
     if presentation_id not in ppt_automation.presentations:
         return {"error": "Presentation ID not found"}
