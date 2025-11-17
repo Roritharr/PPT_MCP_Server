@@ -1138,6 +1138,66 @@ def save_copy(presentation_id: str, path: str) -> Dict[str, Any]:
     except Exception as e:
         return {"error": f"Error saving copy: {str(e)}"}
 
+@mcp.tool()
+def export_slide_as_image(presentation_id: str, slide_id: int, image_format: str = "PNG", width: int = 960, height: int = 720) -> Dict[str, Any]:
+    """
+    Export a slide as an image file to verify formatting and content.
+
+    Args:
+        presentation_id: ID of the presentation
+        slide_id: ID of the slide to export (integer)
+        image_format: Image format - "PNG" or "JPG" (default: PNG)
+        width: Width of exported image in pixels (default: 960)
+        height: Height of exported image in pixels (default: 720)
+
+    Returns:
+        Dictionary with path to the exported image file
+    """
+    if presentation_id not in ppt_automation.presentations:
+        return {"error": "Presentation ID not found"}
+
+    pres = ppt_automation.presentations[presentation_id]
+
+    try:
+        # Get slide count
+        slide_count = pres.Slides.Count
+
+        # Validate slide_id
+        if slide_id < 1 or slide_id > slide_count:
+            return {"error": f"Invalid slide ID: {slide_id}. Valid range is 1-{slide_count}"}
+
+        # Validate image format
+        if image_format.upper() not in ["PNG", "JPG", "JPEG"]:
+            return {"error": f"Invalid image format: {image_format}. Supported formats: PNG, JPG"}
+
+        # Get the slide
+        slide = pres.Slides.Item(slide_id)
+
+        # Create temporary file path for the image
+        import tempfile
+        temp_dir = tempfile.gettempdir()
+        image_filename = f"slide_{slide_id}_{image_format.lower()}_export.{image_format.lower() if image_format.upper() != 'JPEG' else 'jpg'}"
+        export_path = os.path.join(temp_dir, image_filename)
+
+        # Export the slide as an image
+        # Note: FilterName must be uppercase for PowerPoint COM API
+        filter_name = image_format.upper()
+        if filter_name == "JPEG":
+            filter_name = "JPG"
+
+        slide.Export(export_path, filter_name, width, height)
+
+        return {
+            "success": True,
+            "path": export_path,
+            "slide_id": slide_id,
+            "image_format": image_format.upper(),
+            "dimensions": {"width": width, "height": height},
+            "message": f"Slide {slide_id} exported successfully to {export_path}"
+        }
+    except Exception as e:
+        return {"error": f"Error exporting slide: {str(e)}"}
+
 def main():
     mcp.run(transport="stdio")
 
