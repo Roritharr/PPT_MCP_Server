@@ -1139,6 +1139,78 @@ def save_copy(presentation_id: str, path: str) -> Dict[str, Any]:
         return {"error": f"Error saving copy: {str(e)}"}
 
 @mcp.tool()
+def get_presentation_sections(presentation_id: str) -> Dict[str, Any]:
+    """
+    Get all sections in a presentation with their slide ranges.
+
+    Args:
+        presentation_id: ID of the presentation
+
+    Returns:
+        Dictionary containing sections and their slide information
+    """
+    if presentation_id not in ppt_automation.presentations:
+        return {"error": "Presentation ID not found"}
+
+    pres = ppt_automation.presentations[presentation_id]
+
+    try:
+        sections = []
+        total_slides = pres.Slides.Count
+
+        # Check if presentation has sections
+        try:
+            sections_count = pres.SectionProperties.Count
+        except:
+            # If Sections property doesn't exist, return empty sections
+            return {
+                "presentation_id": presentation_id,
+                "total_slides": total_slides,
+                "has_sections": False,
+                "sections": []
+            }
+
+        # Iterate through all sections
+        for i in range(1, sections_count + 1):
+            try:
+                section = pres.SectionProperties.Item(i)
+
+                # Get section properties
+                section_name = section.Name if hasattr(section, "Name") else f"Section {i}"
+                section_first_slide = section.FirstSlideIndex if hasattr(section, "FirstSlideIndex") else None
+                section_slide_count = section.SlideCount if hasattr(section, "SlideCount") else None
+
+                # Calculate slide range
+                if section_first_slide and section_slide_count:
+                    slide_range = {
+                        "start": section_first_slide,
+                        "end": section_first_slide + section_slide_count - 1,
+                        "count": section_slide_count
+                    }
+                else:
+                    slide_range = None
+
+                sections.append({
+                    "index": i,
+                    "name": section_name,
+                    "slide_range": slide_range
+                })
+            except Exception as e:
+                # Skip sections that can't be accessed
+                continue
+
+        return {
+            "success": True,
+            "presentation_id": presentation_id,
+            "total_slides": total_slides,
+            "has_sections": len(sections) > 0,
+            "section_count": len(sections),
+            "sections": sections
+        }
+    except Exception as e:
+        return {"error": f"Error getting presentation sections: {str(e)}"}
+
+@mcp.tool()
 def export_slide_as_image(presentation_id: str, slide_id: int, image_format: str = "PNG", width: int = 960, height: int = 720) -> Dict[str, Any]:
     """
     Export a slide as an image file to verify formatting and content.
@@ -1173,10 +1245,13 @@ def export_slide_as_image(presentation_id: str, slide_id: int, image_format: str
         # Get the slide
         slide = pres.Slides.Item(slide_id)
 
-        # Create temporary file path for the image
+        # Create temporary file path for the image with timestamp
         import tempfile
+        from datetime import datetime
         temp_dir = tempfile.gettempdir()
-        image_filename = f"slide_{slide_id}_{image_format.lower()}_export.{image_format.lower() if image_format.upper() != 'JPEG' else 'jpg'}"
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        file_ext = image_format.lower() if image_format.upper() != 'JPEG' else 'jpg'
+        image_filename = f"slide_{slide_id}_{timestamp}_{file_ext}.{file_ext}"
         export_path = os.path.join(temp_dir, image_filename)
 
         # Export the slide as an image
