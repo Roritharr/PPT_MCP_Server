@@ -1215,14 +1215,24 @@ def set_text_font_size(presentation_id: str, slide_id: str, shape_id: str, font_
     """
     Set the font size of text in a shape.
 
+    Works with text boxes, placeholders, and grouped shapes containing text.
+    Automatically handles both TextFrame and TextFrame2 APIs for compatibility.
+    Use this to ensure brand compliance by setting correct font sizes (e.g.,
+    Knockout 44pt for titles, Akkurat Light 14pt for body text).
+
     Args:
         presentation_id: ID of the presentation
         slide_id: ID of the slide (numeric string)
         shape_id: ID of the shape (numeric string)
-        font_size: Font size in points (e.g., 12, 14, 18, 24, etc.)
+        font_size: Font size in points (e.g., 12, 14, 18, 24, 44, etc.)
 
     Returns:
         Status of the operation
+
+    Example use cases:
+        - Set title font to 44pt for section headers
+        - Adjust body text to 14pt for readability
+        - Fix font sizes after copying slides from other presentations
     """
     if presentation_id not in ppt_automation.presentations:
         return {"error": "Presentation ID not found"}
@@ -1290,6 +1300,11 @@ def set_text_font_name(presentation_id: str, slide_id: str, shape_id: str, font_
     """
     Set the font name/family of text in a shape.
 
+    Works with text boxes, placeholders, and grouped shapes containing text.
+    Automatically handles both TextFrame and TextFrame2 APIs for compatibility.
+    Use this to apply brand-compliant fonts and ensure visual consistency across
+    presentations.
+
     Args:
         presentation_id: ID of the presentation
         slide_id: ID of the slide (numeric string)
@@ -1298,6 +1313,12 @@ def set_text_font_name(presentation_id: str, slide_id: str, shape_id: str, font_
 
     Returns:
         Status of the operation
+
+    Example use cases:
+        - Apply "Knockout" font to titles and headers
+        - Set "Atomic Marker" for emphasis text
+        - Use "Akkurat Light" for body text
+        - Fix fonts after importing slides from external presentations
     """
     if presentation_id not in ppt_automation.presentations:
         return {"error": "Presentation ID not found"}
@@ -1365,13 +1386,32 @@ def get_shape_properties(presentation_id: str, slide_id: int, shape_id: int) -> 
     """
     Get detailed properties of a shape including position, size, and formatting.
 
+    Works with ALL PowerPoint shape types including:
+    - Text boxes (type 17)
+    - Images/Pictures (type 13)
+    - Icons and graphics (type 1 - AutoShape)
+    - Grouped shapes (type 6)
+    - Placeholders (type 14)
+    - Charts, tables, and more
+
+    Returns position (left, top, width, height), text content if available,
+    and font properties (name, size, bold) for text-containing shapes.
+    Use this to identify correct positioning before copying shapes.
+
     Args:
         presentation_id: ID of the presentation
         slide_id: ID of the slide (integer)
         shape_id: ID of the shape (integer)
 
     Returns:
-        Dictionary containing shape properties
+        Dictionary containing shape properties: id, name, type, type_name,
+        position (left/top/width/height), has_text, text, and font properties
+
+    Example use cases:
+        - Inspect icon position in library slide before copying
+        - Verify text formatting before applying changes
+        - Get dimensions for precise shape alignment
+        - Identify shape type to determine what operations are valid
     """
     if presentation_id not in ppt_automation.presentations:
         return {"error": "Presentation ID not found"}
@@ -1443,17 +1483,28 @@ def set_shape_position(presentation_id: str, slide_id: int, shape_id: int,
     """
     Set the position and/or size of a shape.
 
+    Works with ALL PowerPoint shape types (text boxes, images, icons, graphics, etc.).
+    You can set any combination of properties - only the specified parameters will be
+    changed, others remain unchanged. This allows precise control over shape placement
+    and sizing.
+
     Args:
         presentation_id: ID of the presentation
         slide_id: ID of the slide (integer)
         shape_id: ID of the shape (integer)
-        left: Left position in points (optional)
-        top: Top position in points (optional)
-        width: Width in points (optional)
-        height: Height in points (optional)
+        left: Left position in points (optional, unchanged if not specified)
+        top: Top position in points (optional, unchanged if not specified)
+        width: Width in points (optional, unchanged if not specified)
+        height: Height in points (optional, unchanged if not specified)
 
     Returns:
-        Status of the operation
+        Status of the operation with new position values
+
+    Example use cases:
+        - Align icons to consistent position (e.g., left=100, top=50)
+        - Adjust only horizontal position: set_shape_position(..., left=200)
+        - Resize without moving: set_shape_position(..., width=300, height=200)
+        - Fine-tune positioning after copying shapes from library slides
     """
     if presentation_id not in ppt_automation.presentations:
         return {"error": "Presentation ID not found"}
@@ -1501,6 +1552,21 @@ def copy_shape(presentation_id: str, source_slide_id: int, source_shape_id: int,
     """
     Copy a shape from one slide to another, optionally setting its position.
 
+    Works with ALL PowerPoint shape types including:
+    - Images/Pictures (type 13) - inserted photos, logos, graphics
+    - Icons and vector graphics (type 1 - AutoShape)
+    - Text boxes (type 17)
+    - Grouped shapes (type 6) - icons with multiple elements
+    - Placeholders (type 14)
+    - Charts, tables, and more
+
+    In PowerPoint's COM API, everything visual is a "shape" - images, icons, text boxes,
+    graphics, etc. This function uses Shape.Copy() and Shapes.Paste() which work
+    universally across all shape types, preserving all formatting, images, and properties.
+
+    Use this to copy icons from library slides, duplicate branded graphics, or reuse
+    visual elements across slides with precise positioning control.
+
     Args:
         presentation_id: ID of the presentation
         source_slide_id: ID of the source slide (integer)
@@ -1510,7 +1576,13 @@ def copy_shape(presentation_id: str, source_slide_id: int, source_shape_id: int,
         top: Top position in points (optional, keeps original if not specified)
 
     Returns:
-        Information about the copied shape
+        Information about the copied shape including new shape ID, name, and position
+
+    Example use cases:
+        - Copy brand icons from icon library slides (slides 33-65 in Pimp My Slide)
+        - Duplicate logos or images across multiple slides
+        - Copy grouped graphics with all elements intact
+        - Reuse complex visual elements with consistent positioning
     """
     if presentation_id not in ppt_automation.presentations:
         return {"error": "Presentation ID not found"}
